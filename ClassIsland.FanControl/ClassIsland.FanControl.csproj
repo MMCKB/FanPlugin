@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ClassIsland.FanControl</AssemblyName>
+    <RootNamespace>ClassIsland.FanControl</RootNamespace>
+    <Version>1.0.0.0</Version>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <NoWarn>$(NoWarn);CS8618;NU1701;CS1591;CA2255</NoWarn>
+    <!-- 指定 RID，使 deps.json 中的依赖路径变为平铺文件名，ClassIsland 的插件加载器才能按 deps.json 找到随包 DLL。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <!-- 让插件自身的依赖（LibreHardwareMonitor 及其依赖）输出到生成目录，方便打包成 cipx。 -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClassIsland.PluginSdk" Version="2.1.0.1" />
+    <PackageReference Include="Avalonia" Version="11.3.17" />
+    <!-- 仅编译期需要：ClassIsland 的 AdvancedItemDragBehavior 派生自 Xaml.Behaviors。
+         运行期由 ClassIsland 自带（app 目录里有 Xaml.Behaviors.dll），不随插件打包。 -->
+    <PackageReference Include="Xaml.Behaviors" Version="11.3.9.5" />
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <Target Name="CopyLibreHardwareMonitorRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <LhmRuntimeFile Include="$(PkgLibreHardwareMonitorLib)\runtimes\win-x64\lib\net8.0\LibreHardwareMonitorLib.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(LhmRuntimeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <ItemGroup>
+    <None Update="manifest.yml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\README.md" Link="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="icon.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

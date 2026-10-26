@@ -1,0 +1,76 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 编译并发布
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: 解析版本号
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $ver = "${{ github.ref_name }}".TrimStart("v", "V")
+          } else {
+            $ver = "0.0.0"
+          }
+          # 统一成四段版本号，避免下游解析失败
+          $parts = $ver.Split(".")
+          while ($parts.Count -lt 4) { $parts += "0" }
+          $full = ($parts[0..3] -join ".")
+          "value=$full"       >> $env:GITHUB_OUTPUT
+          "display=$ver"      >> $env:GITHUB_OUTPUT
+          Write-Host "版本号：$full"
+
+      - name: 同步 manifest 版本号
+        shell: pwsh
+        run: |
+          $manifest = "ClassIsland.FanControl/manifest.yml"
+          $text = Get-Content $manifest -Raw
+          $text = $text -replace "(?m)^version:.*$", "version: ${{ steps.version.outputs.value }}"
+          Set-Content $manifest $text -NoNewline -Encoding utf8
+
+      - name: 还原依赖
+        run: dotnet restore ClassIsland.FanControl/ClassIsland.FanControl.csproj
+
+      - name: 编译
+        run: dotnet build ClassIsland.FanControl/ClassIsland.FanControl.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.value }}
+
+      - name: 打包 cipx
+        shell: pwsh
+        run: ./ClassIsland.FanControl/pack.ps1
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClassIsland.FanControl-${{ steps.version.outputs.value }}
+          path: ClassIsland.FanControl/ClassIsland.FanControl.cipx
+          if-no-files-found: error
+
+      - name: 创建 Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.display }}
+          tag_name: ${{ github.ref_name }}
+          files: ClassIsland.FanControl/ClassIsland.FanControl.cipx
+          generate_release_notes: true
+          fail_on_unmatched_files: true

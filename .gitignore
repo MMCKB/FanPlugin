@@ -1,0 +1,21 @@
+# 构建输出
+[Bb]in/
+[Oo]bj/
+cipx/
+.vs/
+*.user
+*.suo
+
+# 打包产物
+*.cipx
+*.zip
+
+# 本地脚本与工作区数据
+ClassIsland.FanControl/update-plugin.ps1
+.workbuddy-ai/
+_test/
+_icon/
+_remote/
+
+# 杂项
+*.log

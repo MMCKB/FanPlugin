@@ -1,0 +1,12 @@
+id: classisland.fancontrol
+name: 风扇控制
+description: 查看风扇实时转速，并按百分比调节风扇转速。支持多风扇、主界面转速组件与自动化行动。
+entranceAssembly: ClassIsland.FanControl.dll
+apiVersion: 2.1.0.1
+version: 1.0.0.0
+author: MMCKB
+url: https://github.com/MMCKB/FanPlugin
+icon: icon.png
+readme: README.md
+supportedOSPlatforms:
+  - Windows

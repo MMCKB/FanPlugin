@@ -1,0 +1,159 @@
+<Window x:Class="ClassIsland.FanControl.Controls.FanLayoutWindow"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:ci="http://classisland.tech/schemas/xaml/core"
+        mc:Ignorable="d"
+        d:DesignHeight="560" d:DesignWidth="760"
+        Title="调整风扇列表"
+        Width="780" Height="580"
+        MinWidth="620" MinHeight="440"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
+    <Window.Styles>
+        <Style Selector="Border.card">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+        <Style Selector="ItemsControl > ContentPresenter">
+            <Setter Property="Margin" Value="0 0 0 4" />
+        </Style>
+        <Style Selector="Button.titlebar-close">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- 自定义标题栏：与弹窗同底色，可拖动窗口 -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto"
+              Background="Transparent"
+              PointerPressed="TitleBar_OnPointerPressed">
+            <StackPanel Grid.Column="0" Margin="18,14,0,6" Spacing="3">
+                <TextBlock Text="调整风扇列表" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="左侧为风扇列表的显示顺序，按住卡片上下拖动即可排序；点击「隐藏」把风扇移到右侧，右侧点击「显示」移回左侧。"
+                           TextWrapping="Wrap" Opacity="0.65" FontSize="12" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="&#x2715;" Classes="titlebar-close"
+                    Click="CloseButton_OnClick"
+                    VerticalAlignment="Top" Margin="0,4,4,0"
+                    ToolTip.Tip="关闭" />
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="18,8,18,0">
+            <!-- 左侧：可见风扇（可排序） -->
+            <Border Grid.Column="0" Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="4,0,4,8">
+                        <ci:LucideIcon Glyph="&#xE37D;" VerticalAlignment="Center" />
+                        <TextBlock Text="显示的风扇" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Text="（按住拖动排序）" FontSize="12" Opacity="0.55" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ListBox x:Name="VisibleList"
+                             Grid.Row="1"
+                             ItemsSource="{Binding VisibleFans}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0">
+                        <!-- 复用 ClassIsland 主界面组件列表的拖拽实现：AdvancedItemDragBehavior + TouchDragThumb 手柄 -->
+                        <ListBox.ItemContainerTheme>
+                            <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0,0,0,4" />
+                                <Setter Property="Interaction.Behaviors">
+                                    <BehaviorCollectionTemplate>
+                                        <BehaviorCollection>
+                                            <ci:AdvancedItemDragBehavior Orientation="Vertical"
+                                                                         HorizontalDragThreshold="33550336"
+                                                                         AllowDragFromDragThumbOnly="True" />
+                                        </BehaviorCollection>
+                                    </BehaviorCollectionTemplate>
+                                </Setter>
+                            </ControlTheme>
+                        </ListBox.ItemContainerTheme>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="6,6,10,6" CornerRadius="4"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <ci:TouchDragThumb Grid.Column="0" Width="22"
+                                                           VerticalAlignment="Stretch"
+                                                           IsExplicitVisible="True"
+                                                           IsCompact="True"
+                                                           ToolTip.Tip="按住此手柄上下拖动排序" />
+                                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center" Margin="6,0,0,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.6" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="隐藏"
+                                                VerticalAlignment="Center"
+                                                Click="HideButton_OnClick"
+                                                IsEnabled="{Binding $parent[ListBox].DataContext.CanHideMore}"
+                                                ToolTip.Tip="至少需要保留一个显示的风扇" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <TextBlock Grid.Column="1" Text="&#x2192;" FontSize="18"
+                       VerticalAlignment="Center" Margin="10,0" Opacity="0.35" />
+
+            <!-- 右侧：已隐藏 -->
+            <Border Grid.Column="2" Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="4,0,4,8">
+                        <ci:LucideIcon Glyph="&#xE1B0;" VerticalAlignment="Center" />
+                        <TextBlock Text="已隐藏" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+                        <Grid>
+                            <TextBlock Text="没有被隐藏的风扇"
+                                       Opacity="0.45" FontSize="12" Margin="10,8"
+                                       IsVisible="{Binding !HasHiddenFans}" />
+                            <ItemsControl ItemsSource="{Binding HiddenFans}"
+                                          IsVisible="{Binding HasHiddenFans}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="10,8" CornerRadius="4"
+                                                Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                Opacity="0.75">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.6" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="显示"
+                                                        VerticalAlignment="Center"
+                                                        Click="ShowButton_OnClick" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,12,18,16">
+            <Button Content="取消" Click="CancelButton_OnClick" />
+            <Button Content="保存" Classes="accent" Click="SaveButton_OnClick" />
+        </StackPanel>
+    </Grid>
+</Window>

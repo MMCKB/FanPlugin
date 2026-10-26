@@ -1,0 +1,184 @@
+<controls:SettingsPageBase x:Class="ClassIsland.FanControl.Controls.FanControlSettingsPage"
+                          xmlns="https://github.com/avaloniaui"
+                          xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                          xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                          xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                          xmlns:controls="clr-namespace:ClassIsland.Core.Abstractions.Controls;assembly=ClassIsland.Core"
+                          xmlns:controls1="clr-namespace:ClassIsland.Core.Controls;assembly=ClassIsland.Core"
+                          xmlns:ci="http://classisland.tech/schemas/xaml/core"
+                          xmlns:fa="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
+                          mc:Ignorable="d"
+                          d:DesignHeight="560" d:DesignWidth="860">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Classes="settings-container animated-intro">
+
+            <!-- 环境提示 -->
+            <fa:InfoBar IsOpen="{Binding Service.HasHint}"
+                        IsVisible="{Binding Service.HasHint}"
+                        IsClosable="False"
+                        Severity="Warning"
+                        Title="环境提示"
+                        Message="{Binding Service.HintText}"
+                        Margin="0 0 0 8" />
+
+            <!-- PawnIO 未安装时才出现的提示卡片；已安装则完全不显示 -->
+            <Border IsVisible="{Binding PawnIoMissing}"
+                    CornerRadius="6" Padding="14" Margin="0 0 0 10"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    BorderBrush="{DynamicResource SystemFillColorCautionBorderBrush}"
+                    BorderThickness="1">
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ci:FluentIcon Glyph="&#xE7BA;"
+                                       FontSize="16"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                        <TextBlock Text="未检测到 PawnIO 驱动"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </StackPanel>
+                    <TextBlock TextWrapping="Wrap" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Text="PawnIO 用于底层访问主板芯片。未安装时只能读取部分设备（如显卡），无法读取和调节主板 / CPU 风扇。" />
+                    <TextBlock Text="{Binding PawnIoPathText}" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="下载并安装" Classes="accent" Click="OpenPawnIoDownload_OnClick"
+                                ToolTip.Tip="打开 https://pawnio.eu/ 下载安装包" />
+                        <Button Content="指定安装目录…" Click="PickPawnIoDirectory_OnClick"
+                                ToolTip.Tip="如果安装到了非默认位置，可在这里手动指定" />
+                        <Button Content="加入 PATH" Click="AddPawnIoToPath_OnClick"
+                                ToolTip.Tip="把上面指定的目录加入当前用户的 PATH" />
+                        <Button Content="重新检测" Click="RecheckPawnIo_OnClick" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- 硬件状态 -->
+            <controls1:IconText Glyph="&#xE8E1;" Text="硬件状态" Margin="0 0 0 4" />
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xE8E1;}"
+                                 Header="检测状态"
+                                 Description="{Binding Service.StatusText}">
+                <fa:SettingsExpander.Footer>
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button Content="刷新" Command="{Binding RefreshCommand}" />
+                        <Button Content="全部恢复自动" Command="{Binding ResetAllCommand}" />
+                    </StackPanel>
+                </fa:SettingsExpander.Footer>
+            </fa:SettingsExpander>
+
+            <!-- 风扇列表 -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0 12 0 4">
+                <controls1:IconText Grid.Column="0" Glyph="&#xEAC0;" Text="风扇列表" VerticalAlignment="Center" />
+                <Button Grid.Column="1"
+                        Content="调整"
+                        Click="AdjustButton_OnClick"
+                        IsEnabled="{Binding HasFans}"
+                        ToolTip.Tip="调整风扇的显示顺序，或隐藏不关心的风扇" />
+            </Grid>
+
+            <TextBlock Text="未检测到风扇。请确认已安装 PawnIO 驱动，并以管理员身份运行 ClassIsland。"
+                       TextWrapping="Wrap"
+                       Opacity="0.6"
+                       FontSize="12"
+                       IsVisible="{Binding !HasFans}" />
+
+            <ItemsControl ItemsSource="{Binding Service.Fans}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <fa:SettingsExpander IconSource="{ci:LucideIconSource &#xE37D;}"
+                                             Header="{Binding DisplayName}"
+                                             Description="{Binding ModeText}"
+                                             IsExpanded="True"
+                                             Margin="0 0 0 4">
+                            <fa:SettingsExpander.Footer>
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding RpmText}"
+                                               FontSize="18"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                    <ToggleSwitch IsChecked="{Binding IsControlled, Mode=TwoWay}"
+                                                  IsEnabled="{Binding CanControl}"
+                                                  OnContent="接管"
+                                                  OffContent="系统"
+                                                  VerticalAlignment="Center" />
+                                </StackPanel>
+                            </fa:SettingsExpander.Footer>
+                            <fa:SettingsExpanderItem Content="ClassIsland 接管风扇"
+                                                     Description="开启后由 ClassIsland 按下方百分比控制风扇；关闭则交回系统（主板/BIOS）自动控制。">
+                                <fa:SettingsExpanderItem.Footer>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <Slider Width="200"
+                                                Minimum="0"
+                                                Maximum="100"
+                                                VerticalAlignment="Center"
+                                                Value="{Binding Percent, Mode=TwoWay}"
+                                                IsEnabled="{Binding PercentEnabled}" />
+                                        <TextBlock Text="{Binding PercentText}"
+                                                   MinWidth="44"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </fa:SettingsExpanderItem.Footer>
+                            </fa:SettingsExpanderItem>
+                        </fa:SettingsExpander>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- 插件设置 -->
+            <controls1:IconText Glyph="&#xEF27;" Text="插件设置" Margin="0 12 0 4" />
+
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xE813;}" Header="刷新" IsExpanded="True">
+                <fa:SettingsExpanderItem Content="转速刷新间隔"
+                                         Description="数值越小刷新越快，硬件访问也越频繁。">
+                    <fa:SettingsExpanderItem.Footer>
+                        <ci:Field Suffix="毫秒" VerticalAlignment="Center">
+                            <NumericUpDown MinWidth="120"
+                                           Minimum="300"
+                                           Maximum="10000"
+                                           Increment="100"
+                                           FormatString="0"
+                                           Value="{Binding PollIntervalMs, Mode=TwoWay}" />
+                        </ci:Field>
+                    </fa:SettingsExpanderItem.Footer>
+                </fa:SettingsExpanderItem>
+            </fa:SettingsExpander>
+
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xEF4F;}" Header="安全" IsExpanded="True">
+                <fa:SettingsExpanderItem Content="启用安全下限"
+                                         Description="避免手动把风扇转速调得过低导致散热不足。">
+                    <fa:SettingsExpanderItem.Footer>
+                        <ToggleSwitch IsChecked="{Binding RespectSafeMinimum, Mode=TwoWay}" />
+                    </fa:SettingsExpanderItem.Footer>
+                </fa:SettingsExpanderItem>
+                <fa:SettingsExpanderItem Content="安全下限">
+                    <fa:SettingsExpanderItem.Footer>
+                        <ci:Field Suffix="%" VerticalAlignment="Center">
+                            <NumericUpDown MinWidth="120"
+                                           Minimum="0"
+                                           Maximum="100"
+                                           Increment="5"
+                                           FormatString="0"
+                                           Value="{Binding SafeMinimumPercent, Mode=TwoWay}" />
+                        </ci:Field>
+                    </fa:SettingsExpanderItem.Footer>
+                </fa:SettingsExpanderItem>
+                <fa:SettingsExpanderItem Content="启动后恢复上次的手动转速"
+                                         Description="关闭后每次启动 ClassIsland 都会让风扇回到自动控制。">
+                    <fa:SettingsExpanderItem.Footer>
+                        <ToggleSwitch IsChecked="{Binding RestoreOnStartup, Mode=TwoWay}" />
+                    </fa:SettingsExpanderItem.Footer>
+                </fa:SettingsExpanderItem>
+            </fa:SettingsExpander>
+
+            <TextBlock Text="手动调速会覆盖主板的风扇曲线；ClassIsland 退出时会把被接管的风扇恢复为自动控制。"
+                       TextWrapping="Wrap"
+                       Opacity="0.6"
+                       FontSize="12"
+                       Margin="2 8 0 0" />
+        </StackPanel>
+    </ScrollViewer>
+</controls:SettingsPageBase>
