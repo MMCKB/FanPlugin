@@ -210,6 +210,7 @@ public class FanDevice : Observable
     /// <summary>
     /// 应用一轮轮询采样结果。controlPercent / manual 来自控制通道的实时读取。
     /// </summary>
+    /// <param name="controlPercent">控制通道的占空比，单位百分比（0-100）。</param>
     internal void ApplyPolled(float? rpm, float? controlPercent, bool manual)
     {
         Rpm = rpm;
@@ -234,19 +235,15 @@ public class FanDevice : Observable
                 OnPropertyChanged(nameof(PercentEnabled));
             }
 
-            // 只在“接管中”或“还没确定过数值”时用硬件 PWM 同步滑条。
-            // 否则关掉接管后，SetDefault 恢复成主板原值会把用户刚设的数字拽下去。
-            if (controlPercent is { } value && (manual || !_percentInitialized))
+            // 滑条数值只由用户操作决定；这里仅在“还没初始化”时用硬件值播种一次。
+            // 之前每次轮询都回写，一旦回读刻度不对，滑条就会被反复拽回同一个数字。
+            if (controlPercent is { } value && !_percentInitialized)
             {
-                var percent = Math.Clamp(value / MaxSoftwareValue * 100.0, 0, 100);
-                if (!_percentInitialized || Math.Abs(percent - _percent) > 0.4)
-                {
-                    _percent = Math.Round(percent);
-                    _percentInitialized = true;
-                    OnPropertyChanged(nameof(Percent));
-                    OnPropertyChanged(nameof(PercentText));
-                    OnPropertyChanged(nameof(ModeText));
-                }
+                _percent = Math.Round(Math.Clamp(value, 0, 100));
+                _percentInitialized = true;
+                OnPropertyChanged(nameof(Percent));
+                OnPropertyChanged(nameof(PercentText));
+                OnPropertyChanged(nameof(ModeText));
             }
         }
         finally

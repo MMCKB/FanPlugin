@@ -416,8 +416,12 @@ public sealed class FanService : Observable
                     rpm = device.ReadRpm();
                     if (device.Control is { } control)
                     {
-                        // 优先使用控制通道传感器的实时值，其次才是上次软件设定的值。
-                        software = device.ControlSensor?.Value ?? control.SoftwareValue;
+                        // ControlSensor.Value 本身就是百分比；control.SoftwareValue 是原始刻度（0~MaxSoftwareValue），
+                        // 两者不能混用，这里统一换算成百分比再往下传。
+                        software = device.ControlSensor?.Value
+                                   ?? (control.MaxSoftwareValue > 0
+                                       ? control.SoftwareValue / control.MaxSoftwareValue * 100f
+                                       : control.SoftwareValue);
                         manual = control.ControlMode == ControlMode.Software;
                     }
                 }
