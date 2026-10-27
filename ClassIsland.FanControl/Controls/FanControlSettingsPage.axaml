@@ -43,11 +43,17 @@
                                Text="PawnIO 用于底层访问主板芯片。未安装时只能读取部分设备（如显卡），无法读取和调节主板 / CPU 风扇。" />
                     <TextBlock Text="{Binding PawnIoPathText}" FontSize="12"
                                Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    <TextBlock Text="{Binding PawnIoMessage}"
+                               IsVisible="{Binding HasPawnIoMessage}"
+                               TextWrapping="Wrap" FontSize="12"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="下载并安装" Classes="accent" Click="OpenPawnIoDownload_OnClick"
                                 ToolTip.Tip="打开 https://pawnio.eu/ 下载安装包" />
+                        <Button Content="安装驱动…" Click="InstallPawnIoDriver_OnClick"
+                                ToolTip.Tip="选择包含 PawnIO.inf 的目录，用 pnputil 安装驱动（需要管理员权限）" />
                         <Button Content="指定安装目录…" Click="PickPawnIoDirectory_OnClick"
-                                ToolTip.Tip="如果安装到了非默认位置，可在这里手动指定" />
+                                ToolTip.Tip="如果已安装但装在非默认位置，可在这里手动指定" />
                         <Button Content="加入 PATH" Click="AddPawnIoToPath_OnClick"
                                 ToolTip.Tip="把上面指定的目录加入当前用户的 PATH" />
                         <Button Content="重新检测" Click="RecheckPawnIo_OnClick" />

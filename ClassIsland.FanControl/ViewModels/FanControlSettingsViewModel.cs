@@ -9,10 +9,26 @@ namespace ClassIsland.FanControl.ViewModels;
 /// </summary>
 public class FanControlSettingsViewModel : Observable
 {
+    private readonly Avalonia.Threading.DispatcherTimer _pawnIoTimer;
+    private bool _lastPawnIoInstalled;
+    private bool _pawnIoKnown;
+    private string _pawnIoMessage = "";
+
     public FanControlSettingsViewModel()
     {
         ResetAllCommand = new RelayCommand(() => Service.ResetAllToAuto());
-        RefreshCommand = new RelayCommand(() => Service.RefreshNow());
+        RefreshCommand = new RelayCommand(() =>
+        {
+            Service.RefreshNow();
+            RefreshPawnIoState();
+        });
+
+        // 页面打开期间定期重测，卸载/安装 PawnIO 后无需重开设置页。
+        _pawnIoTimer = new Avalonia.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5)
+        };
+        _pawnIoTimer.Tick += (_, _) => RefreshPawnIoState();
     }
 
     public FanService Service => FanService.Instance;
@@ -28,6 +44,21 @@ public class FanControlSettingsViewModel : Observable
     public bool PawnIoMissing => !Service.PawnIo.IsInstalled;
 
     public string PawnIoStatusText => Service.PawnIo.Summary;
+
+    /// <summary>指定路径 / 安装驱动后的反馈信息。</summary>
+    public string PawnIoMessage
+    {
+        get => _pawnIoMessage;
+        private set
+        {
+            if (Set(ref _pawnIoMessage, value))
+            {
+                OnPropertyChanged(nameof(HasPawnIoMessage));
+            }
+        }
+    }
+
+    public bool HasPawnIoMessage => !string.IsNullOrEmpty(PawnIoMessage);
 
     public string PawnIoPathText => string.IsNullOrWhiteSpace(Service.Settings.PawnIoCustomPath)
         ? "未指定自定义路径"
@@ -103,12 +134,22 @@ public class FanControlSettingsViewModel : Observable
         Service.Updated += OnServiceUpdated;
         OnPropertyChanged(nameof(HasFans));
         RefreshPawnIoState();
+        _pawnIoTimer.Start();
     }
 
-    /// <summary>重新检测 PawnIO 并刷新提示卡片。</summary>
+    /// <summary>重新检测 PawnIO 并刷新提示卡片（结果没变就不打扰绑定）。</summary>
     public void RefreshPawnIoState()
     {
         Service.RefreshPawnIo();
+
+        var installed = Service.PawnIo.IsInstalled;
+        if (_pawnIoKnown && installed == _lastPawnIoInstalled)
+        {
+            return;
+        }
+
+        _pawnIoKnown = true;
+        _lastPawnIoInstalled = installed;
         OnPropertyChanged(nameof(PawnIoMissing));
         OnPropertyChanged(nameof(PawnIoStatusText));
         OnPropertyChanged(nameof(PawnIoPathText));
@@ -118,9 +159,43 @@ public class FanControlSettingsViewModel : Observable
     public bool SetPawnIoPath(string path)
     {
         var ok = Service.SetPawnIoCustomPath(path);
+        PawnIoMessage = ok
+            ? "已在该目录找到 PawnIO.sys。如果仍无法读取风扇，说明驱动还没注册到系统，请用「安装驱动…」。"
+            : "该目录里没有 PawnIO.sys。PawnIO 是内核驱动，单纯指定路径不会让它生效，需要先安装。";
         OnPropertyChanged(nameof(PawnIoMissing));
         OnPropertyChanged(nameof(PawnIoStatusText));
         OnPropertyChanged(nameof(PawnIoPathText));
+        return ok;
+    }
+
+    /// <summary>
+    /// 用 pnputil 安装指定目录里的 PawnIO 驱动（需要管理员权限）。
+    /// 目录中必须包含 .inf 文件。
+    /// </summary>
+    public bool InstallPawnIoDriver(string folder)
+    {
+        var inf = PawnIoLocator.FindInfFile(folder);
+        if (inf == null)
+        {
+            PawnIoMessage = "该目录里没有 PawnIO.inf，无法安装。请先运行 PawnIO 安装程序（或解压安装包后选择解压目录）。";
+            return false;
+        }
+
+        var (ok, output) = PawnIoLocator.InstallDriver(inf);
+        PawnIoMessage = ok
+            ? "驱动安装命令已执行，正在重新检测…"
+            : "驱动安装失败：" + output;
+
+        if (ok)
+        {
+            Service.SetPawnIoCustomPath(folder);
+            RefreshPawnIoState();
+            OnPropertyChanged(nameof(PawnIoPathText));
+            PawnIoMessage = PawnIoMissing
+                ? "安装命令已执行，但仍未检测到驱动。可能需要重启后再试，或该 .inf 与当前系统不匹配。"
+                : "驱动已安装并检测成功。";
+        }
+
         return ok;
     }
 
@@ -137,7 +212,11 @@ public class FanControlSettingsViewModel : Observable
         RefreshPawnIoState();
     }
 
-    public void Detach() => Service.Updated -= OnServiceUpdated;
+    public void Detach()
+    {
+        Service.Updated -= OnServiceUpdated;
+        _pawnIoTimer.Stop();
+    }
 
     private void OnServiceUpdated(object? sender, EventArgs e) => OnPropertyChanged(nameof(HasFans));
 }

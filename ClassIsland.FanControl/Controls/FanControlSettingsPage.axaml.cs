@@ -71,6 +71,28 @@ public partial class FanControlSettingsPage : SettingsPageBase
         _viewModel.SetPawnIoPath(uri.LocalPath);
     }
 
+    private async void InstallPawnIoDriver_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider is not { } storage)
+        {
+            return;
+        }
+
+        var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "选择包含 PawnIO.inf 的目录",
+            AllowMultiple = false
+        });
+
+        if (folders.FirstOrDefault()?.Path is not { } uri)
+        {
+            return;
+        }
+
+        _viewModel.InstallPawnIoDriver(uri.LocalPath);
+    }
+
     private void AddPawnIoToPath_OnClick(object? sender, RoutedEventArgs e)
         => _viewModel.AddPawnIoToPath();
 
