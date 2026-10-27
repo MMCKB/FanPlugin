@@ -5,6 +5,16 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（如 1.0.4，不用带 v）"
+        required: true
+        type: string
+      create_release:
+        description: "编译完成后创建 Release"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -28,17 +38,29 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.ref_type }}" -eq "tag") {
-            $ver = "${{ github.ref_name }}".TrimStart("v", "V")
+            # 推送标签触发：版本号和标签都来自标签本身
+            $tag = "${{ github.ref_name }}"
+            $ver = $tag.TrimStart("v", "V")
+            $makeRelease = "true"
           } else {
-            $ver = "0.0.0"
+            # 手动触发：版本号来自输入
+            $ver = "${{ inputs.version }}".Trim().TrimStart("v", "V")
+            if ([string]::IsNullOrWhiteSpace($ver)) {
+              throw "手动触发时必须填写版本号（例如 1.0.4）"
+            }
+            $tag = "v$ver"
+            $makeRelease = "${{ inputs.create_release }}"
           }
+
           # 统一成四段版本号，避免下游解析失败
           $parts = $ver.Split(".")
           while ($parts.Count -lt 4) { $parts += "0" }
           $full = ($parts[0..3] -join ".")
-          "value=$full"       >> $env:GITHUB_OUTPUT
-          "display=$ver"      >> $env:GITHUB_OUTPUT
-          Write-Host "版本号：$full"
+          "value=$full"          >> $env:GITHUB_OUTPUT
+          "display=$ver"         >> $env:GITHUB_OUTPUT
+          "tag=$tag"             >> $env:GITHUB_OUTPUT
+          "release=$makeRelease" >> $env:GITHUB_OUTPUT
+          Write-Host "版本号：$full / 标签：$tag / 创建 Release：$makeRelease"
 
       - name: 同步 manifest 版本号
         shell: pwsh
@@ -66,11 +88,12 @@ jobs:
           if-no-files-found: error
 
       - name: 创建 Release
-        if: github.ref_type == 'tag'
+        if: steps.version.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: v${{ steps.version.outputs.display }}
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: ClassIsland.FanControl/ClassIsland.FanControl.cipx
           generate_release_notes: true
           fail_on_unmatched_files: true
