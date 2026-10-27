@@ -224,7 +224,9 @@ public class FanDevice : Observable
         {
             if (IsControlled != manual)
             {
-                Set(ref _isControlled, manual);
+                // 注意：Set 的 CallerMemberName 在这里会取到 "ApplyPolled"，
+                // 必须显式传属性名，否则界面收不到 IsControlled 的变更（开关不刷新）。
+                Set(ref _isControlled, manual, nameof(IsControlled));
                 OnPropertyChanged(nameof(ModeText));
                 OnPropertyChanged(nameof(PercentEnabled));
             }
@@ -262,7 +264,7 @@ public class FanDevice : Observable
 
             if (_isControlled != controlled)
             {
-                Set(ref _isControlled, controlled);
+                Set(ref _isControlled, controlled, nameof(IsControlled));
             }
 
             OnPropertyChanged(nameof(PercentText));
