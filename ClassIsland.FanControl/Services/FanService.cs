@@ -744,30 +744,111 @@ public sealed class FanService : Observable
         _pollTimer?.Dispose();
         _saveTimer?.Dispose();
 
+        var restored = 0;
+        var failed = new List<string>();
+        var details = new List<string>();
+
         try
         {
-            lock (_sync)
+            // 退出阶段可能和轮询线程抢锁，这里给个上限，抢不到就跳过（宁可少关一次也不要卡死退出）。
+            var locked = Monitor.TryEnter(_sync, 1500);
+            try
             {
                 foreach (var device in _fanArray)
                 {
-                    if (device.Control != null && _restoreOnShutdown.Contains(device.Id))
+                    if (device.Control is not { } control)
                     {
-                        device.Control.SetDefault();
+                        continue;
+                    }
+
+                    // 只要“当前处于接管状态”或“记录在待恢复集合里”，都要交回系统。
+                    // 双重条件是为了防止记录集合因异常路径没写进去。
+                    if (!device.IsControlled && !_restoreOnShutdown.Contains(device.Id))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        control.SetDefault();
+
+                        // 有些芯片写完后需要一拍才真正切回固件控制，读回确认一次，必要时重试。
+                        var mode = ReadControlMode(control);
+                        if (mode == ControlMode.Software)
+                        {
+                            Thread.Sleep(30);
+                            control.SetDefault();
+                            mode = ReadControlMode(control);
+                        }
+
+                        restored++;
+                        details.Add($"{device.Name}={mode?.ToString() ?? "未知"}");
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add($"{device.DisplayName}: {ex.Message}");
                     }
                 }
 
+                _restoreOnShutdown.Clear();
                 _computer?.Close();
                 _computer = null;
             }
+            finally
+            {
+                if (locked)
+                {
+                    Monitor.Exit(_sync);
+                }
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // 退出阶段忽略所有异常。
+            failed.Add("关闭硬件访问: " + ex.Message);
         }
 
         lock (_settingsLock)
         {
             Settings.Save(_configFolder);
+        }
+
+        WriteShutdownLog(restored, failed, details);
+    }
+
+    /// <summary>安全地读一次控制模式，读不到返回 null。</summary>
+    private static ControlMode? ReadControlMode(IControl control)
+    {
+        try
+        {
+            return control.ControlMode;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>退出时把恢复情况写进 shutdown.log，便于排查“退出后风扇没交回系统”。</summary>
+    private void WriteShutdownLog(int restored, List<string> failed, List<string> details)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_configFolder))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(_configFolder);
+            var path = Path.Combine(_configFolder, "shutdown.log");
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] 恢复 {restored} 个风扇" +
+                       (details.Count > 0 ? "（" + string.Join(", ", details) + "）" : "") +
+                       (failed.Count == 0 ? "，无失败" : "，失败：" + string.Join(" | ", failed)) +
+                       Environment.NewLine;
+            File.AppendAllText(path, line);
+        }
+        catch
+        {
+            // 日志失败不影响退出。
         }
     }
 

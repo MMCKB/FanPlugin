@@ -16,6 +16,9 @@ public class FanDevice : Observable
     private bool _canControl;
     private bool _suppressCallbacks;
 
+    /// <summary>滑条数值是否已经确定。确定后只有“接管中”才会被硬件采样覆盖。</summary>
+    private bool _percentInitialized;
+
     public FanDevice(
         ISensor? sensor,
         ISensor? controlSensor,
@@ -231,12 +234,15 @@ public class FanDevice : Observable
                 OnPropertyChanged(nameof(PercentEnabled));
             }
 
-            if (controlPercent is { } value)
+            // 只在“接管中”或“还没确定过数值”时用硬件 PWM 同步滑条。
+            // 否则关掉接管后，SetDefault 恢复成主板原值会把用户刚设的数字拽下去。
+            if (controlPercent is { } value && (manual || !_percentInitialized))
             {
                 var percent = Math.Clamp(value / MaxSoftwareValue * 100.0, 0, 100);
-                if (Math.Abs(percent - _percent) > 0.4)
+                if (!_percentInitialized || Math.Abs(percent - _percent) > 0.4)
                 {
                     _percent = Math.Round(percent);
+                    _percentInitialized = true;
                     OnPropertyChanged(nameof(Percent));
                     OnPropertyChanged(nameof(PercentText));
                     OnPropertyChanged(nameof(ModeText));
@@ -256,6 +262,7 @@ public class FanDevice : Observable
         try
         {
             var rounded = Math.Round(percent);
+            _percentInitialized = true;
             if (Math.Abs(_percent - rounded) > 0.01)
             {
                 _percent = rounded;
