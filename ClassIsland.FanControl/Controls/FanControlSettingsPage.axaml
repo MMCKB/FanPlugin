@@ -62,7 +62,14 @@
             </Border>
 
             <!-- 硬件状态 -->
-            <controls1:IconText Glyph="&#xE8E1;" Text="硬件状态" Margin="0 0 0 4" />
+            <Grid ColumnDefinitions="*,Auto" Margin="0 0 0 4">
+                <controls1:IconText Grid.Column="0" Glyph="&#xE8E1;" Text="硬件状态" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding Service.TemperatureText}"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </Grid>
             <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xE8E1;}"
                                  Header="检测状态"
                                  Description="{Binding Service.StatusText}">
@@ -121,6 +128,7 @@
                                                 Maximum="100"
                                                 VerticalAlignment="Center"
                                                 Value="{Binding Percent, Mode=TwoWay}"
+                                                ValueChanged="FanPercent_OnValueChanged"
                                                 IsEnabled="{Binding PercentEnabled}" />
                                         <TextBlock Text="{Binding PercentText}"
                                                    MinWidth="44"
@@ -176,6 +184,20 @@
                                          Description="关闭后每次启动 ClassIsland 都会让风扇回到自动控制。">
                     <fa:SettingsExpanderItem.Footer>
                         <ToggleSwitch IsChecked="{Binding RestoreOnStartup, Mode=TwoWay}" />
+                    </fa:SettingsExpanderItem.Footer>
+                </fa:SettingsExpanderItem>
+            </fa:SettingsExpander>
+
+            <!-- 保护卡片：只有通过隐藏手势解锁后才出现 -->
+            <fa:SettingsExpander IconSource="{ci:FluentIconSource &#xE72E;}"
+                                 Header="保护"
+                                 IsVisible="{Binding ProtectionUnlocked}"
+                                 IsExpanded="True"
+                                 Margin="0 12 0 0">
+                <fa:SettingsExpanderItem Content="启用强制保护"
+                                         Description="关闭后：滑条可以设为 0% 让风扇真正停转；CPU 温度超过 80 °C 也不再自动交回系统控制。由你自行承担一切后果。">
+                    <fa:SettingsExpanderItem.Footer>
+                        <ToggleSwitch IsChecked="{Binding ProtectionEnabled, Mode=TwoWay}" />
                     </fa:SettingsExpanderItem.Footer>
                 </fa:SettingsExpanderItem>
             </fa:SettingsExpander>

@@ -26,15 +26,51 @@ public sealed class FanService : Observable
     private bool _started;
     private bool _shutdown;
 
+    /// <summary>温度上限：达到这个温度会强制把所有风扇交回系统控制。</summary>
+    public const double MaxSafeTemperature = 80.0;
+
+    /// <summary>温度回落到这个值以下才允许重新接管（留回差，避免在阈值附近反复跳变）。</summary>
+    public const double OverheatResumeTemperature = 75.0;
+
+    private double? _cpuTemperature;
+    private bool _overheatLockout;
+
+    /// <summary>0% 的延迟交回计时器：快速拖动时滑条可能瞬间掠过 0，不能立刻判死。</summary>
+    private readonly Timer _zeroReleaseTimer;
+    private FanDevice? _zeroPendingDevice;
+
+    /// <summary>每台风扇最近一次用户下发指令的时间，用来识别硬件回读的瞬时抖动。</summary>
+    private readonly Dictionary<string, DateTime> _lastUserWrite = new();
+
     private string _statusText = "正在初始化硬件监控…";
     private string _hintText = "";
     private bool _isReady;
 
     public static FanService Instance { get; } = new();
 
+    public FanService()
+    {
+        _zeroReleaseTimer = new Timer(
+            _ => Dispatcher.UIThread.Post(CommitPendingZeroRelease),
+            null,
+            Timeout.Infinite,
+            Timeout.Infinite);
+    }
+
     public ObservableCollection<FanDevice> Fans { get; } = new();
 
     public PluginSettings Settings { get; private set; } = new();
+
+    /// <summary>当前 CPU 温度（摄氏度）。读不到时为 null，通常是没有以管理员身份运行。</summary>
+    public double? CpuTemperature => _cpuTemperature;
+
+    /// <summary>温度保护是否已锁定（超温后拒绝重新接管，直到温度回落）。</summary>
+    public bool IsOverheatLockout => _overheatLockout;
+
+    /// <summary>界面显示用的温度文案。</summary>
+    public string TemperatureText => _cpuTemperature is { } t
+        ? $"CPU {t:0} °C · 上限 {MaxSafeTemperature:0} °C"
+        : "CPU 温度不可用（需以管理员身份运行）";
 
     /// <summary>是否已成功打开硬件监控。</summary>
     public bool IsReady
@@ -388,6 +424,7 @@ public sealed class FanService : Observable
         }
 
         var snapshot = new List<(FanDevice Device, float? Rpm, float? Software, bool Manual)>();
+        double? cpuTemperature = null;
 
         lock (_sync)
         {
@@ -404,6 +441,8 @@ public sealed class FanService : Observable
             {
                 // 单次刷新失败不影响后续轮询。
             }
+
+            cpuTemperature = ReadCpuTemperature();
 
             foreach (var device in _fanArray)
             {
@@ -423,6 +462,15 @@ public sealed class FanService : Observable
                                        ? control.SoftwareValue / control.MaxSoftwareValue * 100f
                                        : control.SoftwareValue);
                         manual = control.ControlMode == ControlMode.Software;
+
+                        // 刚下发过指令时，硬件回读可能慢一拍返回 Default，
+                        // 直接采信会把接管开关关掉。2 秒内以用户操作为准。
+                        if (!manual && device.IsControlled &&
+                            _lastUserWrite.TryGetValue(device.Id, out var writtenAt) &&
+                            (DateTime.UtcNow - writtenAt).TotalSeconds < 2)
+                        {
+                            manual = true;
+                        }
                     }
                 }
                 catch
@@ -432,6 +480,12 @@ public sealed class FanService : Observable
 
                 snapshot.Add((device, rpm, software, manual));
             }
+        }
+
+        // 温度保护先于一切：只要超温就交回系统控制，不依赖界面。
+        if (cpuTemperature is { } temperature)
+        {
+            HandleTemperature(temperature);
         }
 
         if (snapshot.Count == 0)
@@ -450,6 +504,285 @@ public sealed class FanService : Observable
         });
     }
 
+    /// <summary>取 CPU 各温度传感器中的最高值（跳过 Distance to TjMax 这类偏移量）。</summary>
+    private double? ReadCpuTemperature()
+    {
+        double? max = null;
+
+        foreach (var hardware in _computer?.Hardware ?? (IEnumerable<IHardware>)Array.Empty<IHardware>())
+        {
+            if (hardware.HardwareType != HardwareType.Cpu)
+            {
+                continue;
+            }
+
+            foreach (var sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType != SensorType.Temperature || sensor.Value is not { } value)
+                {
+                    continue;
+                }
+
+                if (value <= 0 || sensor.Name.Contains("Distance", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                max = max is null ? value : Math.Max(max.Value, value);
+            }
+        }
+
+        return max;
+    }
+
+    /// <summary>温度超过上限时强制交回系统控制；回落后解除锁定。</summary>
+    private void HandleTemperature(double temperature)
+    {
+        var changed = _cpuTemperature is null || Math.Abs(_cpuTemperature.Value - temperature) > 0.4;
+        _cpuTemperature = temperature;
+
+        if (changed)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                OnPropertyChanged(nameof(CpuTemperature));
+                OnPropertyChanged(nameof(TemperatureText));
+            });
+        }
+
+        // 保护被关闭：只保留温度显示，不再做任何强制交回。
+        if (!Settings.ProtectionEnabled)
+        {
+            _overheatLockout = false;
+            return;
+        }
+
+        if (temperature >= MaxSafeTemperature)
+        {
+            var wasLockout = _overheatLockout;
+            _overheatLockout = true;
+
+            if (_fanArray.Any(x => x.IsControlled))
+            {
+                ForceReleaseAll($"CPU 温度 {temperature:0} °C 达到 {MaxSafeTemperature:0} °C 上限，已强制交回系统控制。");
+            }
+            else if (!wasLockout)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    StatusText = $"CPU 温度 {temperature:0} °C 达到 {MaxSafeTemperature:0} °C 上限，暂时不允许接管。";
+                    Updated?.Invoke(this, EventArgs.Empty);
+                });
+            }
+
+            return;
+        }
+
+        if (_overheatLockout && temperature <= OverheatResumeTemperature)
+        {
+            _overheatLockout = false;
+            Dispatcher.UIThread.Post(() =>
+            {
+                StatusText = $"CPU 温度已回落至 {temperature:0} °C，可以重新接管。";
+                Updated?.Invoke(this, EventArgs.Empty);
+            });
+        }
+    }
+
+    /// <summary>强制把所有处于接管状态的风扇交回系统控制（温度保护用）。</summary>
+    private void ForceReleaseAll(string reason)
+    {
+        var released = new List<(FanDevice Device, double Percent)>();
+
+        lock (_sync)
+        {
+            foreach (var device in _fanArray)
+            {
+                if (device.Control is not { } control)
+                {
+                    continue;
+                }
+
+                // 已接管 或 记录在待恢复集合里的，都要交回。
+                if (!device.IsControlled && !_restoreOnShutdown.Contains(device.Id))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    control.SetDefault();
+                    released.Add((device, ReadControlPercent(device, control)));
+                }
+                catch
+                {
+                    // 单个风扇恢复失败不影响其它风扇。
+                }
+            }
+
+            _restoreOnShutdown.Clear();
+            _lastUserWrite.Clear();
+        }
+
+        CancelPendingZeroRelease();
+
+        if (released.Count == 0)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var (device, percent) in released)
+            {
+                device.ApplyUserResult(percent, controlled: false);
+                lock (_settingsLock)
+                {
+                    Settings.FanStates[device.Id] = new FanState { Manual = false, Percent = percent };
+                }
+            }
+
+            RequestSave();
+            StatusText = reason;
+            Updated?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    /// <summary>把单个风扇交回系统控制，并让滑条显示系统当前的占空比。</summary>
+    private void ReleaseToSystem(FanDevice device, string reason)
+    {
+        if (device.Control is not { } control)
+        {
+            return;
+        }
+
+        double percent;
+        try
+        {
+            lock (_sync)
+            {
+                control.SetDefault();
+                percent = ReadControlPercent(device, control);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"恢复「{device.DisplayName}」自动控制失败：{ex.Message}";
+            return;
+        }
+
+        device.ApplyUserResult(percent, controlled: false);
+        _restoreOnShutdown.Remove(device.Id);
+        _lastUserWrite.Remove(device.Id);
+        lock (_settingsLock)
+        {
+            Settings.FanStates[device.Id] = new FanState { Manual = false, Percent = percent };
+        }
+        RequestSave();
+        StatusText = reason;
+        Updated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>取消待执行的 0% 交回。</summary>
+    private void CancelPendingZeroRelease()
+    {
+        if (_zeroPendingDevice == null)
+        {
+            return;
+        }
+
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(CancelPendingZeroRelease);
+            return;
+        }
+
+        _zeroReleaseTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        _zeroPendingDevice = null;
+    }
+
+    /// <summary>延迟确认到点：真的停在 0% 才交回系统。</summary>
+    private void CommitPendingZeroRelease()
+    {
+        var device = _zeroPendingDevice;
+        _zeroPendingDevice = null;
+
+        if (device != null && device.IsControlled)
+        {
+            ReleaseToSystem(device, $"「{device.DisplayName}」设为 0%，已交回系统控制。");
+        }
+    }
+
+    /// <summary>
+    /// 读取控制通道当前的占空比（百分比）。
+    /// 优先用传感器值——它读的是芯片寄存器；`SoftwareValue` 只是 LHM 记住的“上次下发值”，
+    /// 交回系统后仍然是旧数字，不能代表实际状态。
+    /// </summary>
+    private static double ReadControlPercent(FanDevice device, IControl control)
+    {
+        double percent;
+
+        if (device.ControlSensor?.Value is { } sensorValue)
+        {
+            percent = sensorValue;
+        }
+        else
+        {
+            var max = control.MaxSoftwareValue > 0 ? control.MaxSoftwareValue : 100f;
+            percent = control.SoftwareValue / max * 100.0;
+        }
+
+        return Math.Clamp(Math.Round(percent), 0, 100);
+    }
+
+    /// <summary>
+    /// 重新开启保护时，把仍停在 0% 的接管风扇交回系统，
+    /// 否则保护开着、风扇却以 0% 停着，等于保护没起作用。
+    /// </summary>
+    public void ReleaseZeroPercentFans()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ReleaseZeroPercentFans);
+            return;
+        }
+
+        foreach (var device in _fanArray.Where(x => x.CanControl && x.IsControlled && x.Percent < 0.5))
+        {
+            ReleaseToSystem(device, $"「{device.DisplayName}」处于 0%，已交回系统控制。");
+        }
+    }
+
+    /// <summary>关闭保护后立即解除温度锁定，让用户能马上接管。</summary>
+    public void ClearOverheatLockout() => _overheatLockout = false;
+
+    /// <summary>安全下限设置变化后：刷新所有滑条的下限，并把低于下限的接管值抬上来。</summary>
+    public void ApplySafeMinimumChange()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ApplySafeMinimumChange);
+            return;
+        }
+
+        var minimum = Settings.RespectSafeMinimum
+            ? Math.Clamp(Settings.SafeMinimumPercent, 0, 100)
+            : 0;
+
+        foreach (var device in _fanArray)
+        {
+            device.RefreshMinimumPercent();
+
+            // 下限被调高时，正在接管的低转速要跟着抬上去，不能留着违规值。
+            if (minimum > 0 && device.IsControlled && device.Percent < minimum)
+            {
+                device.Percent = minimum;
+            }
+        }
+
+        Updated?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>设置指定风扇的占空比（0-100）。</summary>
     public void SetPercent(FanDevice device, double percent)
     {
@@ -464,10 +797,44 @@ public sealed class FanService : Observable
             return;
         }
 
+        // 0% 等于让风扇停转，默认必须交回系统控制。但快速拖动时滑条会瞬间掠过 0
+        // （指针越出轨道被夹到最小值），所以延迟 350ms 确认：期间出现任何非 0 值就取消。
+        // 解锁并关闭保护后，0% 会被真正写进硬件。
+        if (percent < 0.5 && Settings.ProtectionEnabled)
+        {
+            if (!device.IsControlled)
+            {
+                return;
+            }
+
+            _zeroPendingDevice = device;
+            _zeroReleaseTimer.Change(350, Timeout.Infinite);
+            return;
+        }
+
+        CancelPendingZeroRelease();
+
+        // 超温保护期间拒绝任何接管请求。
+        if (_overheatLockout)
+        {
+            device.ApplyUserResult(device.Percent, controlled: false);
+            StatusText = $"温度保护中（CPU {_cpuTemperature:0} °C），需降到 {OverheatResumeTemperature:0} °C 以下才能重新接管。";
+            Updated?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         var target = Math.Clamp(percent, 0, 100);
         if (Settings.RespectSafeMinimum)
         {
             target = Math.Max(target, Math.Clamp(Settings.SafeMinimumPercent, 0, 100));
+        }
+
+        // 绝不把近乎 0 的占空比写进芯片：一旦这样写过，LHM 下次会把它当成
+        // “主板原始值”记下来，之后恢复自动就会恢复成 0，风扇再也转不起来。
+        // 关闭保护后不再做这层限制（这是用户明确选择的行为）。
+        if (Settings.ProtectionEnabled && target > 0 && target < 1)
+        {
+            target = 1;
         }
 
         try
@@ -476,6 +843,7 @@ public sealed class FanService : Observable
             {
                 var max = control.MaxSoftwareValue > 0 ? control.MaxSoftwareValue : 100f;
                 control.SetSoftware((float)(target / 100.0 * max));
+                _lastUserWrite[device.Id] = DateTime.UtcNow;
             }
 
             device.ApplyUserResult(target, controlled: true);
@@ -517,6 +885,8 @@ public sealed class FanService : Observable
 
             device.ApplyUserResult(device.Percent, controlled: false);
             _restoreOnShutdown.Remove(device.Id);
+            _lastUserWrite.Remove(device.Id);
+            CancelPendingZeroRelease();
             lock (_settingsLock)
             {
                 Settings.FanStates[device.Id] = new FanState { Manual = false, Percent = device.Percent };
@@ -747,6 +1117,7 @@ public sealed class FanService : Observable
         _shutdown = true;
         _pollTimer?.Dispose();
         _saveTimer?.Dispose();
+        _zeroReleaseTimer.Dispose();
 
         var restored = 0;
         var failed = new List<string>();

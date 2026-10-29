@@ -64,6 +64,49 @@ public class FanControlSettingsViewModel : Observable
         ? "未指定自定义路径"
         : Service.Settings.PawnIoCustomPath;
 
+    /// <summary>是否已经通过隐藏手势解锁「保护」设置项。</summary>
+    public bool ProtectionUnlocked => Service.Settings.ProtectionUnlocked;
+
+    /// <summary>强制保护开关（0% 与超温交回）。默认开启，解锁后才能关闭。</summary>
+    public bool ProtectionEnabled
+    {
+        get => Service.Settings.ProtectionEnabled;
+        set
+        {
+            if (Service.Settings.ProtectionEnabled == value)
+            {
+                return;
+            }
+
+            Service.Settings.ProtectionEnabled = value;
+            if (value)
+            {
+                // 重新开启保护：把还在 0% 停着的风扇交回系统。
+                Service.ReleaseZeroPercentFans();
+            }
+            else
+            {
+                Service.ClearOverheatLockout();
+            }
+
+            Service.SaveSettings();
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>解锁「保护」设置项（隐藏手势验证通过后调用）。</summary>
+    public void UnlockProtection()
+    {
+        if (Service.Settings.ProtectionUnlocked)
+        {
+            return;
+        }
+
+        Service.Settings.ProtectionUnlocked = true;
+        Service.SaveSettings();
+        OnPropertyChanged(nameof(ProtectionUnlocked));
+    }
+
     public bool RespectSafeMinimum
     {
         get => Service.Settings.RespectSafeMinimum;
@@ -76,6 +119,7 @@ public class FanControlSettingsViewModel : Observable
 
             Service.Settings.RespectSafeMinimum = value;
             Service.SaveSettings();
+            Service.ApplySafeMinimumChange();
             OnPropertyChanged();
         }
     }
@@ -92,6 +136,7 @@ public class FanControlSettingsViewModel : Observable
 
             Service.Settings.SafeMinimumPercent = (double)v;
             Service.SaveSettings();
+            Service.ApplySafeMinimumChange();
             OnPropertyChanged();
         }
     }

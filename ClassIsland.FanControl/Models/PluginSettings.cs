@@ -70,6 +70,17 @@ public class PluginSettings
     /// </summary>
     public string PawnIoCustomPath { get; set; } = "";
 
+    /// <summary>
+    /// 强制保护开关：0% 交回系统控制、CPU 超过 80 °C 强制交回系统。
+    /// 默认开启；关闭需要通过隐藏手势解锁。
+    /// </summary>
+    public bool ProtectionEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 是否已经通过隐藏手势解锁「保护」设置项。
+    /// </summary>
+    public bool ProtectionUnlocked { get; set; }
+
     public static PluginSettings Load(string folder)
     {
         try

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Avalonia.Threading;
 using ClassIsland.FanControl.Core;
 using LibreHardwareMonitor.Hardware;
 
@@ -130,6 +131,17 @@ public class FanDevice : Observable
 
                 if (value)
                 {
+                    // 滑条停在 0 时接管会被强制交回系统，这里先给一个安全的起始值。
+                    if (_percent <= 0.5)
+                    {
+                        var settings = FanService.Instance.Settings;
+                        _percent = settings.RespectSafeMinimum
+                            ? Math.Clamp(settings.SafeMinimumPercent, 1, 100)
+                            : 50;
+                        OnPropertyChanged(nameof(Percent));
+                        OnPropertyChanged(nameof(PercentText));
+                    }
+
                     FanService.Instance.SetPercent(this, _percent);
                 }
                 else
@@ -143,25 +155,59 @@ public class FanDevice : Observable
     /// <summary>滑块是否可用（仅在接管开启时可用）。</summary>
     public bool PercentEnabled => _canControl && _isControlled;
 
+    /// <summary>
+    /// 允许下发的最小百分比：开启安全下限时就是下限本身，关闭时为 0。
+    /// 滑条本身仍是完整的 0-100 轨道，只是拖动结果会被限制到这个值。
+    /// </summary>
+    public double MinimumPercent
+    {
+        get
+        {
+            var settings = FanService.Instance.Settings;
+            return settings.RespectSafeMinimum ? Math.Clamp(settings.SafeMinimumPercent, 0, 100) : 0;
+        }
+    }
+
+    /// <summary>安全下限设置变化后通知界面重新读取 <see cref="MinimumPercent"/>。</summary>
+    internal void RefreshMinimumPercent() => OnPropertyChanged(nameof(MinimumPercent));
+
     /// <summary>当前占空比（0-100）。用户拖动滑块时立即下发。</summary>
     public double Percent
     {
         get => _percent;
         set
         {
-            if (Math.Abs(value - _percent) < 0.01)
+            // 滑条是完整的 0-100，开启安全下限时只把“能到的最低值”卡住。
+            var minimum = MinimumPercent;
+            var target = Math.Clamp(value, 0, 100);
+            if (target < minimum)
             {
+                target = minimum;
+            }
+
+            // 滑条是连续值，鼠标能停在 0.4 这种位置上：显示会四舍五入成 0%，
+            // 但值本身 > 0，就会绕过"0% 交回系统"的判断。这里统一按 0 处理。
+            if (target < 0.5)
+            {
+                target = 0;
+            }
+
+            if (Math.Abs(target - _percent) < 0.01)
+            {
+                // 值没变也要把滑条顶回去，否则拇指会停在越界的位置。
+                // 必须延后一拍：当前仍在绑定的写回过程中，直接通知会被忽略。
+                Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(Percent)));
                 return;
             }
 
-            _percent = value;
+            _percent = target;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ModeText));
             OnPropertyChanged(nameof(PercentText));
 
             if (!_suppressCallbacks)
             {
-                FanService.Instance.SetPercent(this, value);
+                FanService.Instance.SetPercent(this, target);
             }
         }
     }
