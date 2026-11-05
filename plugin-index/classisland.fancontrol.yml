@@ -1,0 +1,25 @@
+# ClassIsland 插件市场索引条目
+#
+# 用法：把这个文件原样复制到 ClassIsland/PluginIndex 仓库的
+#   index/plugins-v2/classisland.fancontrol.yml
+# 然后向该仓库发起 PR。文件名必须与 id 完全一致。
+#
+# 每次发版后需要同步更新 version 字段，并确认对应 Tag（a.b.c.d 形式）的
+# Release 已上传 cipx 且正文带有 MD5 校验注释。
+
+id: classisland.fancontrol
+name: 风扇控制
+description: 查看风扇实时转速，并按百分比调节风扇转速。支持多风扇、主界面转速组件与自动化行动。
+entranceAssembly: ClassIsland.FanControl.dll
+url: https://github.com/MMCKB/FanPlugin
+version: 1.0.6.0
+apiVersion: 2.1.0.1
+author: MMCKB
+readme: README.md
+icon: icon.png
+repoOwner: MMCKB
+repoName: FanPlugin
+assetsRoot: main/ClassIsland.FanControl
+artifactName: ClassIsland.FanControl.cipx
+supportedOSPlatforms:
+  - Windows

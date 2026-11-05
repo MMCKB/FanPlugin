@@ -2,12 +2,14 @@ name: Build and Release
 
 on:
   push:
+    # 插件市场要求 Tag 严格为 a.b.c.d 形式（如 1.0.6.0），不能带 v 前缀或其它内容，
+    # 否则 PluginIndex 的索引生成器认不出，插件不会出现在市场里。
     tags:
-      - "v*"
+      - "[0-9]*"
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号（如 1.0.4，不用带 v）"
+        description: "版本号（四段，如 1.0.6.0）"
         required: true
         type: string
       create_release:
@@ -38,17 +40,17 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.ref_type }}" -eq "tag") {
-            # 推送标签触发：版本号和标签都来自标签本身
+            # 推送标签触发：版本号来自标签；旧的 v1.x 标签也兼容一下
+            $ver = "${{ github.ref_name }}".TrimStart("v", "V")
             $tag = "${{ github.ref_name }}"
-            $ver = $tag.TrimStart("v", "V")
             $makeRelease = "true"
           } else {
             # 手动触发：版本号来自输入
             $ver = "${{ inputs.version }}".Trim().TrimStart("v", "V")
             if ([string]::IsNullOrWhiteSpace($ver)) {
-              throw "手动触发时必须填写版本号（例如 1.0.4）"
+              throw "手动触发时必须填写版本号（例如 1.0.6.0）"
             }
-            $tag = "v$ver"
+            $tag = $null
             $makeRelease = "${{ inputs.create_release }}"
           }
 
@@ -56,6 +58,10 @@ jobs:
           $parts = $ver.Split(".")
           while ($parts.Count -lt 4) { $parts += "0" }
           $full = ($parts[0..3] -join ".")
+
+          # 手动触发时用规范化的四段版本号当 Tag，满足插件市场的 a.b.c.d 要求
+          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = $full }
+
           "value=$full"          >> $env:GITHUB_OUTPUT
           "display=$ver"         >> $env:GITHUB_OUTPUT
           "tag=$tag"             >> $env:GITHUB_OUTPUT
@@ -80,6 +86,17 @@ jobs:
         shell: pwsh
         run: ./ClassIsland.FanControl/pack.ps1
 
+      - name: 计算插件包校验和
+        id: pkg
+        shell: pwsh
+        run: |
+          $file = "ClassIsland.FanControl/ClassIsland.FanControl.cipx"
+          $md5 = (Get-FileHash $file -Algorithm MD5).Hash
+          $json = "{`"ClassIsland.FanControl.cipx`":`"$md5`"}"
+          "md5=$md5" >> $env:GITHUB_OUTPUT
+          "comment=<!-- CLASSISLAND_PKG_MD5 $json -->" >> $env:GITHUB_OUTPUT
+          Write-Host "MD5：$md5"
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -91,9 +108,15 @@ jobs:
         if: steps.version.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: v${{ steps.version.outputs.display }}
+          name: ${{ steps.version.outputs.tag }}
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: ClassIsland.FanControl/ClassIsland.FanControl.cipx
-          generate_release_notes: true
           fail_on_unmatched_files: true
+          body: |
+            ### 更新内容
+
+            完整提交记录：${{ github.server_url }}/${{ github.repository }}/commits/${{ steps.version.outputs.tag }}
+
+            <!-- ClassIsland 插件市场索引生成器会读取下面这行，勿删 -->
+            ${{ steps.pkg.outputs.comment }}
