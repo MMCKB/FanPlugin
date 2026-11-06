@@ -71,28 +71,28 @@ jobs:
       - name: 同步 manifest 版本号
         shell: pwsh
         run: |
-          $manifest = "ClassIsland.FanControl/manifest.yml"
+          $manifest = "mmckb.fancontrol/manifest.yml"
           $text = Get-Content $manifest -Raw
           $text = $text -replace "(?m)^version:.*$", "version: ${{ steps.version.outputs.value }}"
           Set-Content $manifest $text -NoNewline -Encoding utf8
 
       - name: 还原依赖
-        run: dotnet restore ClassIsland.FanControl/ClassIsland.FanControl.csproj
+        run: dotnet restore mmckb.fancontrol/mmckb.fancontrol.csproj
 
       - name: 编译
-        run: dotnet build ClassIsland.FanControl/ClassIsland.FanControl.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.value }}
+        run: dotnet build mmckb.fancontrol/mmckb.fancontrol.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.value }}
 
       - name: 打包 cipx
         shell: pwsh
-        run: ./ClassIsland.FanControl/pack.ps1
+        run: ./mmckb.fancontrol/pack.ps1
 
       - name: 计算插件包校验和
         id: pkg
         shell: pwsh
         run: |
-          $file = "ClassIsland.FanControl/ClassIsland.FanControl.cipx"
+          $file = "mmckb.fancontrol/mmckb.fancontrol.cipx"
           $md5 = (Get-FileHash $file -Algorithm MD5).Hash
-          $json = "{`"ClassIsland.FanControl.cipx`":`"$md5`"}"
+          $json = "{`"mmckb.fancontrol.cipx`":`"$md5`"}"
           "md5=$md5" >> $env:GITHUB_OUTPUT
           "comment=<!-- CLASSISLAND_PKG_MD5 $json -->" >> $env:GITHUB_OUTPUT
           Write-Host "MD5：$md5"
@@ -100,8 +100,8 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: ClassIsland.FanControl-${{ steps.version.outputs.value }}
-          path: ClassIsland.FanControl/ClassIsland.FanControl.cipx
+          name: mmckb.fancontrol-${{ steps.version.outputs.value }}
+          path: mmckb.fancontrol/mmckb.fancontrol.cipx
           if-no-files-found: error
 
       - name: 创建 Release
@@ -111,7 +111,7 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          files: ClassIsland.FanControl/ClassIsland.FanControl.cipx
+          files: mmckb.fancontrol/mmckb.fancontrol.cipx
           fail_on_unmatched_files: true
           body: |
             ### 更新内容

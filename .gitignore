@@ -11,7 +11,7 @@ cipx/
 *.zip
 
 # 本地脚本与工作区数据
-ClassIsland.FanControl/update-plugin.ps1
+mmckb.fancontrol/update-plugin.ps1
 .workbuddy-ai/
 _test/
 _icon/

@@ -33,7 +33,7 @@
 
 ## 快速开始
 
-1. 前往 [Releases](https://github.com/MMCKB/FanPlugin/releases) 下载最新的 `ClassIsland.FanControl.cipx`。
+1. 前往 [Releases](https://github.com/MMCKB/FanPlugin/releases) 下载最新的 `mmckb.fancontrol.cipx`。
 2. 打开 ClassIsland，进入 **应用设置 → 插件**，点击安装插件并选择刚下载的 `.cipx` 文件。
 3. 安装 **PawnIO** 驱动（<https://pawnio.eu/>）——读取和调节主板 / CPU 风扇需要它。
 4. **以管理员身份**重新启动 ClassIsland。
