@@ -7,7 +7,7 @@ namespace ClassIsland.FanControl.Automation;
 /// <summary>
 /// 行动：把风扇转速设置为指定百分比。
 /// </summary>
-[ActionInfo("classisland.fancontrol.setSpeed", "设置风扇转速", "\ue8e1", true, "风扇控制")]
+[ActionInfo("mmckb.fancontrol.setSpeed", "设置风扇转速", "\ue8e1", true, "风扇控制")]
 public class SetFanSpeedAction : ActionBase<SetFanSpeedActionSettings>
 {
     protected override async Task OnInvoke()

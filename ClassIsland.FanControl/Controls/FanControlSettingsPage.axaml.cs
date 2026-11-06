@@ -21,7 +21,7 @@ namespace ClassIsland.FanControl.Controls;
 /// <summary>
 /// 风扇控制设置页面。
 /// </summary>
-[SettingsPageInfo("classisland.fancontrol.settings", "风扇控制", "\ue8e1", "\ue8e0", SettingsPageCategory.External)]
+[SettingsPageInfo("mmckb.fancontrol.settings", "风扇控制", "\ue8e1", "\ue8e0", SettingsPageCategory.External)]
 public partial class FanControlSettingsPage : SettingsPageBase
 {
     private readonly FanControlSettingsViewModel _viewModel = new();

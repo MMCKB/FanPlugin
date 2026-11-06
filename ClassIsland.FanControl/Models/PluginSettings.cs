@@ -88,6 +88,14 @@ public class PluginSettings
             var path = Path.Combine(folder, "Settings.json");
             if (!File.Exists(path))
             {
+                // 插件 id 从 classisland.fancontrol 改成了 mmckb.fancontrol，
+                // 配置目录跟着变，这里把旧目录的设置迁移过来，避免用户丢配置。
+                if (TryLoadLegacy(folder) is { } legacy)
+                {
+                    legacy.Save(folder);
+                    return legacy;
+                }
+
                 return new PluginSettings();
             }
 
@@ -98,6 +106,34 @@ public class PluginSettings
         {
             // 配置损坏时回退到默认设置，不影响插件加载。
             return new PluginSettings();
+        }
+    }
+
+    /// <summary>旧插件 id，仅用于配置迁移。</summary>
+    private const string LegacyPluginId = "classisland.fancontrol";
+
+    private static PluginSettings? TryLoadLegacy(string folder)
+    {
+        try
+        {
+            var parent = Path.GetDirectoryName(folder);
+            if (string.IsNullOrEmpty(parent))
+            {
+                return null;
+            }
+
+            var oldPath = Path.Combine(parent, LegacyPluginId, "Settings.json");
+            if (!File.Exists(oldPath))
+            {
+                return null;
+            }
+
+            var json = File.ReadAllText(oldPath);
+            return JsonSerializer.Deserialize<PluginSettings>(json, JsonOptions);
+        }
+        catch
+        {
+            return null;
         }
     }
 
